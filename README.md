@@ -25,8 +25,8 @@ X_transformed = model.fit_transform(X)
 
 ## Roadmap
 - [x] Basic NMF with negative-binomial divergence
-- [ ] L1/L2 regularization
-- [ ] Unit tests
+- [x] L1/L2 regularization
+- [x] Unit tests
 - [ ] Packaging
 - [ ] Examples
 - [ ] Documentation
