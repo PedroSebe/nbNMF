@@ -1,1 +1,1 @@
-from .nbNMF.nbNMF import nbNMF
+from .nbNMF import nbNMF
