@@ -2,19 +2,23 @@ import numpy as np
 import scipy.stats
 import warnings
 from initialization import _initialize_nmf
+from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.exceptions import ConvergenceWarning
 
 class nbNMF(TransformerMixin, BaseEstimator):
-    def __init__(self, n_components, init="nndsvda", max_iter=300, tol=1e-4):
+    def __init__(self, n_components, init="nndsvda", max_iter=300, tol=1e-4, random_state=None):
         self.n_components = n_components
-        self.n_components_ = n_components
         self.init = init
         self.max_iter = max_iter
         self.tol = tol
+        self.random_state = random_state
     
     def fit(self, X, y=None):
-        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.init, self.max_iter, self.tol)
+        check_array(X)
+        self.n_features_ = X.shape[1]
+        self.n_components_ = self.n_components
+        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.init, self.max_iter, self.tol, self.random_state)
         self.components_ = H
         self.phi_ = phi
         self.reconstruction_err_ = error
@@ -27,12 +31,20 @@ class nbNMF(TransformerMixin, BaseEstimator):
         return self
     
     def transform(self, X, y=None):
-        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.init, self.max_iter, self.tol,
+        check_is_fitted(self, ["components_", "phi_"])
+        check_array(X)
+        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.init, self.max_iter, self.tol, self.random_state,
                                                     w_only=True, H=self.components_, phi=self.phi_)
+        if X.shape[1] != self.n_features_:
+            raise ValueError('Shape of input is different from what was seen'
+                             'in `fit`')
         return W
     
     def fit_transform(self, X, y=None):
-        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.init, self.max_iter, self.tol)
+        check_array(X)
+        self.n_features_ = X.shape[1]
+        self.n_components_ = self.n_components
+        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.init, self.max_iter, self.tol, self.random_state)
         self.components_ = H
         self.phi_ = phi
         self.reconstruction_err_ = error
@@ -45,11 +57,28 @@ class nbNMF(TransformerMixin, BaseEstimator):
         return W
     
     def inverse_transform(self, W):
+        check_is_fitted(self, ["components_", "phi_"])
+        check_array(W)
         return W @ self.components_
 
     def score(self, X, y=None):
+        check_is_fitted(self, ["components_", "phi_"])
+        check_array(X)
         WH = self.transform(X) @ self.components_
         return scipy.stats.nbinom.logpmf(X, self.phi_, self.phi_/(WH+self.phi_)).sum()
+    
+    def get_params(self, deep=True):
+        return dict(
+            n_components = self.n_components,
+            init = self.init,
+            max_iter = self.max_iter,
+            tol = self.tol
+        )
+    
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            setattr(self, parameter, value)
+        return self
 
 def update_w(X, W, H, phi):
     WH = W @ H
@@ -71,7 +100,7 @@ def update_phi(X, mean, phi):
     phi *= np.exp(-fp/(fp+fpp*phi))
     return phi
 
-def nbNMF_optimize(X, n_components, init="nndsvda", max_iter=300, tol=1e-4, w_only=False, H=None, phi=None):
+def nbNMF_optimize(X, n_components, init="nndsvda", max_iter=300, tol=1e-4, random_state=None, w_only=False, H=None, phi=None):
     # initialization
     if w_only:
         if H is None:
@@ -80,7 +109,7 @@ def nbNMF_optimize(X, n_components, init="nndsvda", max_iter=300, tol=1e-4, w_on
             raise ValueError("When optimizing for W only (e.g. in nbNMF.transform), the overdispersion phi has to be supplied.")
         W = np.ones((X.shape[0],n_components))
     else:
-        W, H = _initialize_nmf(X, n_components=n_components, init=init)
+        W, H = _initialize_nmf(X, n_components=n_components, init=init, random_state=random_state)
         phi = 10.0
     error_at_init = -scipy.stats.nbinom.logpmf(X, phi, phi/(W@H+phi)).sum()
     previous_error = error_at_init
