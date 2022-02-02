@@ -7,18 +7,24 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.exceptions import ConvergenceWarning
 
 class nbNMF(TransformerMixin, BaseEstimator):
-    def __init__(self, n_components, init="nndsvda", max_iter=300, tol=1e-4, random_state=None):
+    def __init__(self, n_components, init="nndsvda", max_iter=300, tol=1e-4, random_state=None, alpha_W=0.0, alpha_H="same", l1_ratio=0.0):
         self.n_components = n_components
         self.init = init
         self.max_iter = max_iter
         self.tol = tol
         self.random_state = random_state
+        self.alpha_W = alpha_W
+        self.alpha_H = alpha_H
+        self.l1_ratio = l1_ratio
     
     def fit(self, X, y=None):
         check_array(X)
         self.n_features_ = X.shape[1]
         self.n_components_ = self.n_components
-        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.init, self.max_iter, self.tol, self.random_state)
+        if self.alpha_H == "same":
+            self.alpha_H = self.alpha_W
+        W, H, phi, n_iter, error = nbNMF_optimize(
+            X, self.n_components, self.alpha_W, self.alpha_H, self.l1_ratio, self.init, self.max_iter, self.tol, self.random_state)
         self.components_ = H
         self.phi_ = phi
         self.reconstruction_err_ = error
@@ -33,7 +39,7 @@ class nbNMF(TransformerMixin, BaseEstimator):
     def transform(self, X, y=None):
         check_is_fitted(self, ["components_", "phi_"])
         check_array(X)
-        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.init, self.max_iter, self.tol, self.random_state,
+        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.alpha_W, self.alpha_H, self.l1_ratio, self.init, self.max_iter, self.tol, self.random_state,
                                                     w_only=True, H=self.components_, phi=self.phi_)
         if X.shape[1] != self.n_features_:
             raise ValueError('Shape of input is different from what was seen'
@@ -44,7 +50,9 @@ class nbNMF(TransformerMixin, BaseEstimator):
         check_array(X)
         self.n_features_ = X.shape[1]
         self.n_components_ = self.n_components
-        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.init, self.max_iter, self.tol, self.random_state)
+        if self.alpha_H == "same":
+            self.alpha_H = self.alpha_W
+        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.alpha_W, self.alpha_H, self.l1_ratio, self.init, self.max_iter, self.tol, self.random_state)
         self.components_ = H
         self.phi_ = phi
         self.reconstruction_err_ = error
@@ -80,10 +88,11 @@ class nbNMF(TransformerMixin, BaseEstimator):
             setattr(self, parameter, value)
         return self
 
-def update_w(X, W, H, phi):
+def update_w(X, W, H, phi, l1=0.0, l2=0.0):
     WH = W @ H
     num = (X/WH) @ H.T
     den = ((X+phi)/(WH+phi)) @ H.T
+    den += l1 + l2*W
     return W * num / den
 
 def update_phi(X, mean, phi):
@@ -100,7 +109,12 @@ def update_phi(X, mean, phi):
     phi *= np.exp(-fp/(fp+fpp*phi))
     return phi
 
-def nbNMF_optimize(X, n_components, init="nndsvda", max_iter=300, tol=1e-4, random_state=None, w_only=False, H=None, phi=None):
+def nbNMF_optimize(X, n_components, alpha_W=0.0, alpha_H=0.0, l1_ratio=0.0, init="nndsvda", max_iter=300, tol=1e-4, random_state=None, w_only=False, H=None, phi=None):
+    # define regularization
+    l1_W = alpha_W*l1_ratio
+    l2_W = alpha_W*(1-l1_ratio)
+    l1_H = alpha_H*l1_ratio
+    l2_H = alpha_H*(1-l1_ratio)
     # initialization
     if w_only:
         if H is None:
@@ -116,9 +130,9 @@ def nbNMF_optimize(X, n_components, init="nndsvda", max_iter=300, tol=1e-4, rand
 
     for n_iter in range(1, max_iter + 1):
         # update parameters
-        W = update_w(X, W, H, phi)
+        W = update_w(X, W, H, phi, l1_W, l2_W)
         if not w_only:
-            H = update_w(X.T, H.T, W.T, phi).T
+            H = update_w(X.T, H.T, W.T, phi, l1_H, l2_H).T
             phi = update_phi(X, W @ H, phi)
         # test for convergence every 10 iterations
         if n_iter % 10 == 0:
