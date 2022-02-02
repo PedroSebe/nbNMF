@@ -1,6 +1,6 @@
 import unittest
-from src.nbNMF import nbNMF
-from src.initialization import _initialize_nmf
+from nbNMF.nbNMF import nbNMF
+from nbNMF.initialization import _initialize_nmf
 from sklearn.exceptions import ConvergenceWarning
 import numpy as np
 

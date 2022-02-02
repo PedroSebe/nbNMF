@@ -2,7 +2,7 @@ import numpy as np
 import scipy.stats
 import warnings
 from .initialization import _initialize_nmf
-from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
+from sklearn.utils.validation import check_array, check_is_fitted
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.exceptions import ConvergenceWarning
 
