@@ -108,6 +108,10 @@ def update_phi(X, mean, phi):
     p = phi/(phi+mean)
     ratio = (X-1)/phi
     # calculate first and second derivatives
+    # these derivatives employ a recursive property of
+    # the digamma/trigamma functions, as well as an 
+    # approximation of the two resulting summands
+    # by Riemann integrals
     fp = np.log(p) + 1 - p + np.log(1+ratio)
     fpp = ( (1-p)**2 - ratio/(1+ratio) ) / phi
     fp, fpp = fp.sum(), fpp.sum()
