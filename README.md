@@ -11,7 +11,10 @@ The issue with the Poisson distribution, however, is that it implies that condit
 This is similar to what [Gouvert, Oberlin and Févotte](https://arxiv.org/abs/1801.01708) proposed (in particular, the multiplication updates are the same). An important difference is that this implementation estimates the overdispersion parameter from the data itself, instead of requiring a hyperparameter.
 
 ## Installation
-Available soon!
+This package can be installed from GitHub via pip:
+```
+pip install git+https://github.com/PedroSebe/nbNMF
+```
 
 ## Usage
 This package was designed to be as similar to [scikit-learn's original NMF implementation](https://scikit-learn.org/stable/modules/generated/sklearn.decomposition.NMF.html) as possible:
