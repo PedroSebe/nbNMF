@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.stats
 import warnings
-from initialization import _initialize_nmf
+from .initialization import _initialize_nmf
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.exceptions import ConvergenceWarning
@@ -17,14 +17,15 @@ class nbNMF(TransformerMixin, BaseEstimator):
         self.alpha_H = alpha_H
         self.l1_ratio = l1_ratio
     
-    def fit(self, X, y=None):
-        check_array(X)
+    def fit(self, X, y=None, W=None, H=None, phi=None):
+        validate_input(X)
         self.n_features_ = X.shape[1]
         self.n_components_ = self.n_components
         if self.alpha_H == "same":
             self.alpha_H = self.alpha_W
         W, H, phi, n_iter, error = nbNMF_optimize(
-            X, self.n_components, self.alpha_W, self.alpha_H, self.l1_ratio, self.init, self.max_iter, self.tol, self.random_state)
+            X, self.n_components, self.alpha_W, self.alpha_H, self.l1_ratio,
+            self.init, self.max_iter, self.tol, self.random_state, W, H, phi)
         self.components_ = H
         self.phi_ = phi
         self.reconstruction_err_ = error
@@ -38,7 +39,7 @@ class nbNMF(TransformerMixin, BaseEstimator):
     
     def transform(self, X, y=None):
         check_is_fitted(self, ["components_", "phi_"])
-        check_array(X)
+        validate_input(X)
         W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.alpha_W, self.alpha_H, self.l1_ratio, self.init, self.max_iter, self.tol, self.random_state,
                                                     w_only=True, H=self.components_, phi=self.phi_)
         if X.shape[1] != self.n_features_:
@@ -46,13 +47,16 @@ class nbNMF(TransformerMixin, BaseEstimator):
                              'in `fit`')
         return W
     
-    def fit_transform(self, X, y=None):
-        check_array(X)
+    def fit_transform(self, X, y=None, W=None, H=None, phi=None):
+        validate_input(X)
         self.n_features_ = X.shape[1]
         self.n_components_ = self.n_components
         if self.alpha_H == "same":
             self.alpha_H = self.alpha_W
-        W, H, phi, n_iter, error = nbNMF_optimize(X, self.n_components, self.alpha_W, self.alpha_H, self.l1_ratio, self.init, self.max_iter, self.tol, self.random_state)
+        W, H, phi, n_iter, error = nbNMF_optimize(
+            X, self.n_components, self.alpha_W, self.alpha_H, self.l1_ratio,
+            self.init, self.max_iter, self.tol, self.random_state, False,
+            W, H, phi)
         self.components_ = H
         self.phi_ = phi
         self.reconstruction_err_ = error
@@ -71,7 +75,7 @@ class nbNMF(TransformerMixin, BaseEstimator):
 
     def score(self, X, y=None):
         check_is_fitted(self, ["components_", "phi_"])
-        check_array(X)
+        validate_input(X)
         WH = self.transform(X) @ self.components_
         return scipy.stats.nbinom.logpmf(X, self.phi_, self.phi_/(WH+self.phi_)).sum()
     
@@ -95,6 +99,11 @@ def update_w(X, W, H, phi, l1=0.0, l2=0.0):
     den += l1 + l2*W
     return W * num / den
 
+def validate_input(X):
+    check_array(X)
+    if (X.min() < 0) or ((X % 1).min() > 1e-4):
+      raise ValueError("The nbNMF method only works for count data (non-negative integers).")
+
 def update_phi(X, mean, phi):
     p = phi/(phi+mean)
     ratio = (X-1)/phi
@@ -109,7 +118,7 @@ def update_phi(X, mean, phi):
     phi *= np.exp(-fp/(fp+fpp*phi))
     return phi
 
-def nbNMF_optimize(X, n_components, alpha_W=0.0, alpha_H=0.0, l1_ratio=0.0, init="nndsvda", max_iter=300, tol=1e-4, random_state=None, w_only=False, H=None, phi=None):
+def nbNMF_optimize(X, n_components, alpha_W=0.0, alpha_H=0.0, l1_ratio=0.0, init="nndsvda", max_iter=500, tol=1e-9, random_state=None, w_only=False, W=None, H=None, phi=None):
     # define regularization
     l1_W = alpha_W*l1_ratio
     l2_W = alpha_W*(1-l1_ratio)
@@ -122,11 +131,12 @@ def nbNMF_optimize(X, n_components, alpha_W=0.0, alpha_H=0.0, l1_ratio=0.0, init
         if phi is None:
             raise ValueError("When optimizing for W only (e.g. in nbNMF.transform), the overdispersion phi has to be supplied.")
         W = np.ones((X.shape[0],n_components))
-    else:
+    elif init != "custom":
         W, H = _initialize_nmf(X, n_components=n_components, init=init, random_state=random_state)
         phi = 10.0
     error_at_init = -scipy.stats.nbinom.logpmf(X, phi, phi/(W@H+phi)).sum()
     previous_error = error_at_init
+    error = error_at_init
 
     for n_iter in range(1, max_iter + 1):
         # update parameters
@@ -137,7 +147,8 @@ def nbNMF_optimize(X, n_components, alpha_W=0.0, alpha_H=0.0, l1_ratio=0.0, init
         # test for convergence every 10 iterations
         if n_iter % 10 == 0:
             error = -scipy.stats.nbinom.logpmf(X, phi, phi/(W@H+phi)).sum()
-            if (previous_error - error) / error_at_init < tol:
+            #print(f"n={n_iter}\tprogress={100*(previous_error-error)/(error_at_init-error)*100:.3f},\tphi={phi:.3f}")
+            if (previous_error - error) < tol * (error_at_init-error):
                 break
             previous_error = error
 
