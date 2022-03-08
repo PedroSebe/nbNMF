@@ -12,30 +12,7 @@ def simulate_train_data(n, p, k, phi=100, seed=1234):
     p = phi/(mean+phi)
     return W, H, rng.negative_binomial(phi, p)
 
-class TestNMF(unittest.TestCase):
-    def test_fit_transform(self):
-        print()
-        n, p, k, phi = 1000, 100, 5, 10.0
-        W_true, H_true, X = simulate_train_data(n, p, k, phi)
-        nmf = nbNMF(5)
-        W = nmf.fit_transform(X)
-        assert W.min() > 0
-        assert nmf.components_.min() > 0
-    
-    def test_inverse_transform(self):
-        print()
-        n, p, k, phi = 1000, 100, 5, 10.0
-        W_true, H_true, X = simulate_train_data(n, p, k, phi)
-        nmf = nbNMF(5)
-        W = nmf.fit_transform(X)
-        X_reconstructed = nmf.inverse_transform(W)
-        assert X_reconstructed.min() > 0
-    
-    def test_convergence_warning(self):
-        with self.assertWarns(ConvergenceWarning):
-            A = np.ones((4, 4))
-            nbNMF(2, max_iter=1).fit(A)
-
+class TestInitialization(unittest.TestCase):
     def test_initialize_nn_output(self):
         # Test that initialization does not return negative values
         rng = np.random.mtrand.RandomState(42)
@@ -68,6 +45,33 @@ class TestNMF(unittest.TestCase):
         for ref, evl in ((W0, Wa), (W0, War), (H0, Ha), (H0, Har)):
             np.testing.assert_allclose(evl[ref != 0], ref[ref != 0])
 
+class TestNMF(unittest.TestCase):
+    def test_fit_transform(self):
+        print()
+        n, p, k, phi = 1000, 100, 5, 10.0
+        W_true, H_true, X = simulate_train_data(n, p, k, phi)
+        nmf = nbNMF(5)
+        W = nmf.fit_transform(X)
+        assert not np.isnan(W).any()
+        assert not np.isnan(nmf.components_).any()
+        assert W.min() >= 0
+        assert nmf.components_.min() >= 0
+    
+    def test_inverse_transform(self):
+        print()
+        n, p, k, phi = 1000, 100, 5, 10.0
+        W_true, H_true, X = simulate_train_data(n, p, k, phi)
+        nmf = nbNMF(5)
+        W = nmf.fit_transform(X)
+        X_reconstructed = nmf.inverse_transform(W)
+        assert X_reconstructed.min() > 0
+        assert not np.isnan(X).any()
+    
+    def test_convergence_warning(self):
+        with self.assertWarns(ConvergenceWarning):
+            A = np.ones((4, 4))
+            nbNMF(2, max_iter=1).fit(A)
+
     def test_nmf_transform_custom_init(self):
         # Smoke test that checks if NMF.transform works with custom initialization
         random_state = np.random.RandomState(0)
@@ -78,9 +82,13 @@ class TestNMF(unittest.TestCase):
         W_init = np.abs(avg * random_state.randn(6, n_components))
         phi_init = np.abs(random_state.gamma(2.0, 1.0))
 
-        m = nbNMF(n_components=n_components, init="custom", random_state=0)
-        m.fit_transform(A, W=W_init, H=H_init, phi=phi_init)
-        m.transform(A)
+        nmf = nbNMF(n_components=n_components, init="custom", random_state=0)
+        nmf.fit_transform(A, W=W_init, H=H_init, phi=phi_init)
+        W = nmf.transform(A)
+        assert not np.isnan(W).any()
+        assert not np.isnan(nmf.components_).any()
+        assert W.min() >= 0
+        assert nmf.components_.min() >= 0
 
     def test_regularization(self):
         n, p, k, phi = 1000, 100, 5, 10.0
@@ -90,6 +98,8 @@ class TestNMF(unittest.TestCase):
                 for l1_ratio in [0.0, 0.50, 1.0]:
                     nmf = nbNMF(5, alpha_W=alpha_W, alpha_H=alpha_H, l1_ratio=l1_ratio)
                     W = nmf.fit_transform(X)
+                    assert not np.isnan(W).any()
+                    assert not np.isnan(nmf.components_).any()
                     assert W.min() >= 0
                     assert nmf.components_.min() >= 0
     

@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.stats
+from scipy.special import psi, polygamma
 import warnings
 from .initialization import _initialize_nmf
 from sklearn.utils.validation import check_array, check_is_fitted
@@ -105,16 +106,11 @@ def validate_input(X):
       raise ValueError("The nbNMF method only works for count data (non-negative integers).")
 
 def update_phi(X, mean, phi):
-    p = phi/(phi+mean)
-    ratio = (X-1)/phi
     # calculate first and second derivatives
-    # these derivatives employ a recursive property of
-    # the digamma/trigamma functions, as well as an 
-    # approximation of the two resulting summands
-    # by Riemann integrals
-    fp = np.log(p) + 1 - p + np.log(1+ratio)
-    fpp = ( (1-p)**2 - ratio/(1+ratio) ) / phi
+    fp = psi(phi+X) - psi(phi) + 1 + np.log(phi) - np.log(mean+phi) - (X+phi)/(mean+phi)
+    fpp = 1/phi - polygamma(1, phi)
     fp, fpp = fp.sum(), fpp.sum()
+    print(f"phi={phi}, fp={fp}, fpp={fpp}, update={np.exp(-fp/(fp+fpp*phi))}")
     # regular Newton-Raphson suggests we do phi -= fp/fpp.
     # running Newton-Raphson on log(phi) to avoid negative
     # overdispersion means we do the following multiplicative
